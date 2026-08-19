@@ -1,0 +1,12 @@
+# 資料檔案（太大，不上傳）
+*.csv
+*.sql.gz
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# 環境變數
+.env
