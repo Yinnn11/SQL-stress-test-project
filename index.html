@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>計程車數據即時儀表板</title>
+    <style>
+        body { 
+            font-family: sans-serif; 
+            margin: 0; 
+            padding: 30px; 
+            background-color: #f4f6f9; 
+            color: #333;
+        }
+        h1 { margin-bottom: 20px; font-size: 24px; font-weight: 600; }
+        .kpi-container { 
+            display: flex; 
+            gap: 20px; 
+            margin-bottom: 25px; 
+            flex-wrap: wrap;
+        }
+        .card { 
+            background: white; 
+            padding: 20px 25px; 
+            border: 1px solid #dcdfe3;
+            border-radius: 4px; 
+            flex: 1; 
+            min-width: 200px;
+        }
+        .card-title { font-size: 14px; color: #6c757d; font-weight: 600; }
+        .number { font-size: 22px; font-weight: bold; margin-top: 8px; color: #1a202c; }
+        .sub-text { font-size: 12px; color: #a0aec0; margin-top: 4px; }
+        .search-section {
+            background: white;
+            padding: 25px;
+            border: 1px solid #dcdfe3;
+            border-radius: 4px;
+        }
+        .search-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+        .search-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        input, select {
+            padding: 8px 12px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            padding: 8px 18px;
+            background-color: #444c56;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        button:hover { background-color: #2d333b; }
+        .speed-tag { font-size: 14px; color: #38a169; font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        th { background-color: #f0f1f3; color: #333; font-weight: 600; }
+        tr:hover { background-color: #f7fafc; }
+        .fare-text { color: #2b6cb0; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>計程車數據即時儀表板</h1>
+
+    <!-- KPI 統計看板 -->
+    <div class="kpi-container">
+        <div class="card">
+            <div class="card-title">系統連線狀態</div>
+            <div id="system-status" class="number" style="color: #a0aec0;">檢查中...</div>
+        </div>
+        <div class="card">
+            <div class="card-title">全站總行程數</div>
+            <div id="total-trips" class="number">載入中...</div>
+        </div>
+        <div class="card">
+            <div class="card-title">平均行駛距離</div>
+            <div id="avg-distance" class="number">載入中...</div>
+        </div>
+        <div class="card">
+            <div class="card-title">最繁忙時段 (Peak Hour)</div>
+            <div id="peak-hour" class="number">載入中...</div>
+            <div id="peak-passengers" class="sub-text"></div>
+        </div>
+    </div>
+
+    <!-- 條件查詢區塊 -->
+    <div class="search-section">
+        <div class="search-header">
+            <h3 style="margin: 0;">進階行程明細查詢</h3>
+            <span id="fetch-time" class="speed-tag"></span>
+        </div>
+
+        <div class="search-controls">
+            <div class="control-group">
+                <label for="dist-input">最小距離 (Miles)：</label>
+                <input type="number" id="dist-input" value="0" min="0" step="0.5" style="width: 70px;">
+            </div>
+
+            <div class="control-group">
+                <label for="sort-select">排序方式：</label>
+                <select id="sort-select">
+                    <option value="latest">按時間 (最新優先)</option>
+                    <option value="longest">按距離 (最長優先)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="limit-input">顯示筆數：</label>
+                <input type="number" id="limit-input" value="5" min="1" max="100" style="width: 70px;">
+            </div>
+
+            <button onclick="fetchTrips()">搜尋資料</button>
+        </div>
+
+        <table id="trips-table" style="display: none;">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>上車時間 (Pickup)</th>
+                    <th>乘客數</th>
+                    <th>行程距離 (Miles)</th>
+                    <th>總車費 (USD)</th>
+                </tr>
+            </thead>
+            <tbody id="trips-body"></tbody>
+        </table>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:8000';
+
+        function checkHealth() {
+            const statusEl = document.getElementById('system-status');
+            fetch(`${API_BASE}/`)
+                .then(res => {
+                    if (res.ok) {
+                        statusEl.innerText = '健康 (Online)';
+                        statusEl.style.color = '#38a169';
+                    } else throw new Error();
+                })
+                .catch(() => {
+                    statusEl.innerText = '異常 (Offline)';
+                    statusEl.style.color = '#e53e3e';
+                });
+        }
+
+        function fetchAnalytics() {
+            fetch(`${API_BASE}/stats/analytics`)
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('total-trips').innerText = data.total_trips.toLocaleString() + ' 筆';
+                    document.getElementById('avg-distance').innerText = data.avg_distance + ' mi';
+                    document.getElementById('peak-hour').innerText = data.peak_hour + ':00';
+                    document.getElementById('peak-passengers').innerText = `累積搭乘：${data.peak_passengers.toLocaleString()} 人次`;
+                })
+                .catch(() => {
+                    document.getElementById('total-trips').innerText = '載入失敗';
+                });
+        }
+
+        function fetchTrips() {
+            const limit = document.getElementById('limit-input').value;
+            const minDist = document.getElementById('dist-input').value;
+            const sortBy = document.getElementById('sort-select').value;
+
+            const tbody = document.getElementById('trips-body');
+            const table = document.getElementById('trips-table');
+            const timeTag = document.getElementById('fetch-time');
+
+            tbody.innerHTML = '<tr><td colspan="5">資料載入中...</td></tr>';
+            table.style.display = 'table';
+
+            const startTime = performance.now();
+
+            fetch(`${API_BASE}/trips?limit=${limit}&min_distance=${minDist}&sort_by=${sortBy}`)
+                .then(res => res.json())
+                .then(data => {
+                    const endTime = performance.now();
+                    const duration = (endTime - startTime).toFixed(2);
+                    timeTag.innerText = `查詢耗時: ${duration} ms`;
+
+                    tbody.innerHTML = '';
+                    if (data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5">查無符合條件的資料</td></tr>';
+                        return;
+                    }
+
+                    data.forEach((trip, index) => {
+                        // total_amount 有時候後端會回傳字串（Decimal 序列化的關係），
+                        // 先轉成 Number 再算，不然 .toFixed 會直接噴錯
+                        const fare = Number(trip.total_amount);
+                        const fareText = isNaN(fare) ? 'N/A' : `$${fare.toFixed(2)}`;
+
+                        tbody.innerHTML += `
+                            <tr>
+                                <td>${index + 1}</td>
+                                <td>${trip.tpep_pickup_datetime || 'N/A'}</td>
+                                <td>${trip.passenger_count ?? 'N/A'} 人</td>
+                                <td>${trip.trip_distance ?? 'N/A'} mi</td>
+                                <td class="fare-text">${fareText}</td>
+                            </tr>
+                        `;
+                    });
+                })
+                .catch(() => {
+                    timeTag.innerText = '';
+                    tbody.innerHTML = '<tr><td colspan="5" style="color:red;">無法連線至 API 服務</td></tr>';
+                });
+        }
+
+        checkHealth();
+        fetchAnalytics();
+        fetchTrips();
+    </script>
+</body>
+</html>

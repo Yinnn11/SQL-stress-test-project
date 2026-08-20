@@ -1,12 +1,15 @@
 # 資料檔案（太大，不上傳）
 *.csv
-*.sql.gz
+*.sql
+*.gz
+*.parquet
 
-# Python
+# Python 編譯暫存與虛擬環境
 __pycache__/
 *.pyc
+.pytest_cache/
 venv/
 .venv/
 
-# 環境變數
+# 環境變數與私密設定
 .env
